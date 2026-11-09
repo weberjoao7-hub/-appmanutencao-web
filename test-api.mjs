@@ -1,0 +1,18 @@
+import { readFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const source = await readFile(new URL('./functions/api/inscricao.js', import.meta.url), 'utf8');
+const { onRequestPost, onRequestGet } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+let saved = [];
+const env = { DB: { prepare(sql) { assert.match(sql, /INSERT INTO interessados/); return { bind(...fields) { return { async run() { saved.push(fields); } }; } }; } } };
+const valid = { nome:'Ana Silva', email:'Ana@Exemplo.com', whatsapp:'(49) 99999-1111', aquario:'doce', consentimento:true, site:'' };
+const call = (data, opts={}) => onRequestPost({request:new Request('https://aquapilot.pages.dev/api/inscricao', {method:'POST',headers:{'content-type':'application/json','origin':opts.origin || 'https://aquapilot.pages.dev'},body:JSON.stringify(data)}),env:opts.env || env});
+let response = await call(valid);
+assert.equal(response.status,200); assert.equal((await response.json()).ok,true);
+assert.equal(saved.length,1); assert.equal(saved[0][1],'ana@exemplo.com');
+response = await call({...valid,consentimento:false}); assert.equal(response.status,400);
+response = await call({...valid,email:'invalido'}); assert.equal(response.status,400);
+response = await call({...valid,site:'https://spam.com'}); assert.equal(response.status,200); assert.equal(saved.length,1);
+response = await call(valid, {origin:'https://site-maligno.com'}); assert.equal(response.status,403);
+response = await call(valid, {env:{}}); assert.equal(response.status,503);
+response = onRequestGet(); assert.equal(response.status,405);
+console.log('✅ Testes da API: 7 cenários aprovados.');
